@@ -1,72 +1,86 @@
-from langchain.agents import create_agent
+import os
+from dotenv import load_dotenv
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from tools import web_search , scrape_url 
-from dotenv import load_dotenv
 from langchain_mistralai import ChatMistralAI
+
+from tools import web_search, scrape_url
 
 load_dotenv()
 
 
-llm = ChatMistralAI(model_name="mistral-7b-instruct-v0.2",temperature=0,api_key=os.getenv("MISTRAL_API_KEY"))
+# ------------------------
+# LLM
+# ------------------------
+llm = ChatMistralAI(
+    model="mistral-small-latest",
+    temperature=0,
+    api_key=os.getenv("MISTRAL_API_KEY")
+)
+print("MODEL BEING USED:", llm.model)
 
-
-def build_search_agent():
-    return create_agent(
-        llm=llm,
-        tools=[web_search],
-       
-    )
-def build_reader_agent():
-    return create_agent(
-        llm=llm,
-        tools=[scrape_url],
-       
-    )
-
+# ------------------------
+# Writer Chain
+# ------------------------
 writer_prompt = ChatPromptTemplate.from_messages([
     ("system", "You are an expert research writer. Write clear, structured and insightful reports."),
-    ("human", """Write a detailed research report on the topic below.
+    ("human", """
+Write a detailed research report on the topic below.
 
 Topic: {topic}
 
 Research Gathered:
 {research}
 
-Structure the report as:
+Structure:
 - Introduction
-- Key Findings (minimum 3 well-explained points)
+- Key Findings (minimum 3)
 - Conclusion
-- Sources (list all URLs found in the research)
+- Sources
 
-Be detailed, factual and professional."""),
+Be factual and professional.
+"""),
 ])
 
-writer_chain = (writer_prompt | llm | StrOutputParser())
+writer_chain = writer_prompt | llm | StrOutputParser()
 
 
+# ------------------------
+# Critic Chain
+# ------------------------
 critic_prompt = ChatPromptTemplate.from_messages([
     ("system", "You are a sharp and constructive research critic. Be honest and specific."),
-    ("human", """Review the research report below and evaluate it strictly.
+    ("human", """
+Review the report strictly.
 
 Report:
 {report}
 
-Respond in this exact format:
+Format:
 
 Score: X/10
 
 Strengths:
 - ...
-- ...
 
 Areas to Improve:
 - ...
-- ...
 
 One line verdict:
-..."""),
+...
+"""),
 ])
 
-critic_chain = (critic_prompt | llm | StrOutputParser())
+critic_chain = critic_prompt | llm | StrOutputParser()
 
+
+# ------------------------
+# Tools (direct use, no agents)
+# ------------------------
+def search_tool(query: str) -> str:
+    return web_search.invoke(query)
+
+
+def scrape_tool(url: str) -> str:
+    return scrape_url.invoke(url)
