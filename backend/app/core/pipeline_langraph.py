@@ -77,8 +77,18 @@ def router_node(state):
 
 
 def chat_node(state):
+    response = llm.invoke(
+        f"""
+        You are a friendly AI assistant.
+
+        User message: {state['topic']}
+
+        Respond naturally like a human assistant (short, conversational).
+        """
+    )
+
     return {
-        "report": f"I am your AI assistant. You said: {state['topic']}",
+        "report": response.content,
         "search_results": "",
         "scraped_content": "",
         "feedback": ""
