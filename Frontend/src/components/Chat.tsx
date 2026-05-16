@@ -15,12 +15,14 @@ type ChatProps = {
   darkMode?: boolean;
   messages: any[];
   setMessages: React.Dispatch<React.SetStateAction<any[]>>;
+  conversationId: string;
 };
 
 export default function Chat({
   darkMode = true,
   messages,
   setMessages,
+  conversationId,
 }: ChatProps) {
   const [input, setInput] = useState("");
   const [steps, setSteps] = useState<any[]>([]);
@@ -84,10 +86,22 @@ export default function Chat({
       setSteps(res.steps || []);
 
       // 3. Save to Supabase (background)
-      const { error: dbError } = await supabase.from("messages").insert([
-        { role: "user", content: currentInput },
-        { role: "ai", content: text },
-      ]);
+      let dbError;
+      if (conversationId) {
+        const result = await supabase.from("messages").insert([
+          { role: "user", content: currentInput, conversation_id: conversationId },
+          { role: "ai", content: text, conversation_id: conversationId },
+        ]);
+        dbError = result.error;
+      }
+
+      if (!conversationId || dbError) {
+        const result = await supabase.from("messages").insert([
+          { role: "user", content: currentInput },
+          { role: "ai", content: text },
+        ]);
+        dbError = result.error;
+      }
 
       if (dbError) {
         console.error("Supabase insert error:", dbError.message, dbError.details, dbError.hint);

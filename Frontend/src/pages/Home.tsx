@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Chat from "@/components/Chat";
+import RecentChats, { type StoredChat } from "@/components/RecentChats";
 import { supabase } from "@/lib/supabase";
 import {
   Robot,
@@ -8,7 +9,6 @@ import {
   BookOpen,
   Folder,
   ClockCounterClockwise,
-  ChatCircle,
   ArrowUpRight,
   CaretDown,
   Sun,
@@ -16,16 +16,142 @@ import {
   Plus,
 } from "@phosphor-icons/react";
 
+const STORAGE_KEY = "valerio_recent_chats";
+const LEGACY_CID = "__legacy__";
+
 const Home = () => {
   const [darkMode, setDarkMode] = useState(true);
   const [messages, setMessages] = useState<any[]>([]);
+  const [conversationId, setConversationId] = useState<string>("");
+  const [recentConversations, setRecentConversations] = useState<StoredChat[]>([]);
+  const conversationSavedRef = useRef(new Set<string>());
+
+  const persistConversation = (id: string, title: string) => {
+    const chat: StoredChat = {
+      id,
+      title: title.slice(0, 50),
+      timestamp: Date.now(),
+    };
+    setRecentConversations((prev) => {
+      const updated = [chat, ...prev.filter((c) => c.id !== id)].slice(0, 20);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const saveMessagesLocally = (id: string) => {
+    if (messages.length > 0) {
+      try {
+        localStorage.setItem(`valerio_chat_${id}`, JSON.stringify(messages));
+      } catch {}
+    }
+  };
 
   const startNewChat = () => {
+    const firstUserMsg = messages.find((m) => m.role === "user");
+    if (firstUserMsg && conversationId) {
+      persistConversation(conversationId, firstUserMsg.content);
+      saveMessagesLocally(conversationId);
+    }
     setMessages([]);
+    setConversationId(crypto.randomUUID());
+  };
+
+  const deleteConversation = async (id: string) => {
+    if (id === LEGACY_CID) return;
+
+    // Remove from localStorage + state
+    setRecentConversations((prev) => {
+      const updated = prev.filter((c) => c.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Remove saved messages from localStorage
+    try { localStorage.removeItem(`valerio_chat_${id}`); } catch {}
+
+    // Delete from Supabase
+    const { error } = await supabase
+      .from("messages")
+      .delete()
+      .eq("conversation_id", id);
+
+    if (error) {
+      // Column might not exist — delete all instead (single bucket, no grouping)
+      console.warn("conversation_id column missing, deleting all messages:", error.message);
+      await supabase.from("messages").delete().not("id", "is", null);
+    }
+
+    // If currently viewing this conversation, start fresh
+    if (id === conversationId) {
+      setMessages([]);
+      setConversationId(crypto.randomUUID());
+    }
+  };
+
+  const loadConversation = async (id: string) => {
+    const firstUserMsg = messages.find((m) => m.role === "user");
+    if (firstUserMsg && conversationId) {
+      persistConversation(conversationId, firstUserMsg.content);
+      saveMessagesLocally(conversationId);
+    }
+    setConversationId(id);
+
+    // Try loading messages filtered by conversation_id
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("conversation_id", id)
+      .order("created_at", { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      setMessages(
+        data.map((msg) => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+        }))
+      );
+      return;
+    }
+
+    // Fallback: load from localStorage (column might not exist yet)
+    const saved = localStorage.getItem(`valerio_chat_${id}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+          return;
+        }
+      } catch {}
+    }
   };
 
   useEffect(() => {
-    const fetchMessages = async () => {
+    conversationSavedRef.current = new Set(recentConversations.map((c) => c.id));
+  }, [recentConversations]);
+
+  useEffect(() => {
+    if (!conversationId || conversationSavedRef.current.has(conversationId)) return;
+    const firstUserMsg = messages.find((m) => m.role === "user");
+    if (!firstUserMsg) return;
+    persistConversation(conversationId, firstUserMsg.content);
+    saveMessagesLocally(conversationId);
+  }, [messages, conversationId]);
+
+  useEffect(() => {
+    const init = async () => {
+      let localChats: StoredChat[] = [];
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) localChats = JSON.parse(stored);
+      } catch {}
+
       const { data, error } = await supabase
         .from("messages")
         .select("*")
@@ -33,21 +159,54 @@ const Home = () => {
 
       if (error) {
         console.error("Fetch error:", error.message);
+        setRecentConversations(localChats);
+        setConversationId(crypto.randomUUID());
         return;
       }
 
-      if (data) {
+      if (data && data.length > 0) {
+        const dbConversations = new Map<string, StoredChat>();
+        for (const msg of data) {
+          const cid = msg.conversation_id || LEGACY_CID;
+          if (!dbConversations.has(cid)) {
+            dbConversations.set(cid, {
+              id: cid,
+              title:
+                msg.role === "user"
+                  ? msg.content.slice(0, 50)
+                  : "Untitled Chat",
+              timestamp: new Date(msg.created_at || Date.now()).getTime(),
+            });
+          }
+        }
+
+        const merged = new Map<string, StoredChat>();
+        for (const [, chat] of dbConversations) merged.set(chat.id, chat);
+        for (const chat of localChats) merged.set(chat.id, chat);
+
+        const sorted = Array.from(merged.values())
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 20);
+
+        setRecentConversations(sorted);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+        } catch {}
+
+        const latestId = sorted[0].id;
+        setConversationId(latestId);
         setMessages(
-          data.map((msg) => ({
-            id: msg.id,
-            role: msg.role,
-            content: msg.content,
-          }))
+          data
+            .filter((m) => (m.conversation_id || LEGACY_CID) === latestId)
+            .map((msg) => ({ id: msg.id, role: msg.role, content: msg.content }))
         );
+      } else {
+        setRecentConversations(localChats);
+        setConversationId(crypto.randomUUID());
       }
     };
 
-    fetchMessages();
+    init();
   }, []);
 
   return (
@@ -129,24 +288,12 @@ const Home = () => {
           </div>
 
           {/* RECENT */}
-          <div className="pt-8 px-3">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest mb-3 text-zinc-500">
-              Recent Chats
-            </h3>
-
-            <ul className="space-y-3">
-              {messages.filter((m) => m.role === "user").length > 0 && (
-                <li>
-                  <a className="flex items-center gap-3 text-sm text-zinc-500 truncate">
-                    <ChatCircle weight="bold" />
-                    {messages
-                      .find((m) => m.role === "user")
-                      ?.content?.slice(0, 30)}
-                  </a>
-                </li>
-              )}
-            </ul>
-          </div>
+          <RecentChats
+            conversations={recentConversations}
+            darkMode={darkMode}
+            onSelect={loadConversation}
+            onDelete={deleteConversation}
+          />
         </nav>
 
         {/* UPGRADE */}
@@ -207,6 +354,7 @@ const Home = () => {
           darkMode={darkMode}
           messages={messages}
           setMessages={setMessages}
+          conversationId={conversationId}
         />
       </main>
     </div>
