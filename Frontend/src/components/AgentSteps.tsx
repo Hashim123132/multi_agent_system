@@ -70,7 +70,7 @@ export default function AgentSteps({
                 <h2 className={`text-sm font-bold ${darkMode ? "text-white" : "text-zinc-900"}`}>
                   Agent Debug Panel
                 </h2>
-                <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">
+                <p className={`text-[10px] uppercase tracking-wider font-bold ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}>
                   Live Execution Log
                 </p>
               </div>
@@ -78,7 +78,9 @@ export default function AgentSteps({
               {/* CLOSE BUTTON */}
               <button
                 onClick={() => setOpen(false)}
-                className="ml-auto p-1 rounded hover:bg-zinc-700/20"
+                className={`ml-auto p-1 rounded transition-colors cursor-pointer ${
+                  darkMode ? "hover:bg-zinc-700/20 text-zinc-400" : "hover:bg-zinc-200/50 text-zinc-500"
+                }`}
               >
                 <X size={16} />
               </button>
@@ -100,25 +102,35 @@ export default function AgentSteps({
                 >
                   <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/30" />
 
-                  <div className="flex items-center gap-2 mb-3 pb-3 border-b border-zinc-700">
-                    <Cpu weight="fill" className="text-zinc-500" />
-                    <span className="text-xs font-bold text-zinc-300">
+                  <div className={`flex items-center gap-2 mb-3 pb-3 border ${
+                    darkMode ? "border-zinc-700" : "border-zinc-200"
+                  }`}>
+                    <Cpu weight="fill" className={darkMode ? "text-zinc-500" : "text-zinc-400"} />
+                    <span className={`text-xs font-bold ${darkMode ? "text-zinc-300" : "text-zinc-700"}`}>
                       {step.agent}
                     </span>
 
-                    <span className="ml-auto text-[10px] px-2 py-0.5 rounded bg-zinc-700 text-zinc-400 font-mono">
+                    <span className={`ml-auto text-[10px] px-2 py-0.5 rounded font-mono ${
+                      darkMode ? "bg-zinc-700 text-zinc-400" : "bg-zinc-200 text-zinc-600"
+                    }`}>
                       {step.action}
                     </span>
                   </div>
 
                   {step.input && (
-                    <p className="text-xs font-mono p-2 rounded bg-zinc-700/40 text-zinc-400 mb-2">
+                    <p className={`text-xs font-mono p-2 rounded mb-2 ${
+                      darkMode ? "bg-zinc-700/40 text-zinc-400" : "bg-zinc-100 text-zinc-600"
+                    }`}>
                       {step.input}
                     </p>
                   )}
 
                   {step.output && (
-                    <p className="text-xs p-2 rounded bg-emerald-900/20 text-zinc-300 border border-emerald-700/40">
+                    <p className={`text-xs p-2 rounded border ${
+                      darkMode
+                        ? "bg-emerald-900/20 text-zinc-300 border-emerald-700/40"
+                        : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                    }`}>
                       {step.output}
                     </p>
                   )}
