@@ -48,12 +48,7 @@ const Home = () => {
       setRecentConversations([]);
 
       if (!user) {
-        let localChats: StoredChat[] = [];
-        try {
-          const stored = localStorage.getItem(STORAGE_KEY);
-          if (stored) localChats = JSON.parse(stored);
-        } catch {}
-        setRecentConversations(localChats);
+        setRecentConversations([]);
         setConversationId(crypto.randomUUID());
         return;
       }
@@ -120,6 +115,7 @@ const Home = () => {
   }, [messages, conversationId]);
 
   const persistConversation = (id: string, title: string) => {
+    if (!user) return;
     const chat: StoredChat = {
       id,
       title: title.slice(0, 50),
@@ -135,6 +131,7 @@ const Home = () => {
   };
 
   const saveMessagesLocally = (id: string) => {
+    if (!user) return;
     if (messages.length > 0) {
       try {
         localStorage.setItem(`Hashim_chat_${id}`, JSON.stringify(messages));
@@ -157,15 +154,16 @@ const Home = () => {
 
     setRecentConversations((prev) => {
       const updated = prev.filter((c) => c.id !== id);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      } catch {}
+      if (user) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        } catch {}
+      }
       return updated;
     });
 
-    try { localStorage.removeItem(`Hashim_chat_${id}`); } catch {}
-
     if (user) {
+      try { localStorage.removeItem(`Hashim_chat_${id}`); } catch {}
       await supabase
         .from("messages")
         .delete()
@@ -207,15 +205,17 @@ const Home = () => {
       }
     }
 
-    const saved = localStorage.getItem(`Hashim_chat_${id}`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed);
-          return;
-        }
-      } catch {}
+    if (user) {
+      const saved = localStorage.getItem(`Hashim_chat_${id}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+            return;
+          }
+        } catch {}
+      }
     }
   };
 
